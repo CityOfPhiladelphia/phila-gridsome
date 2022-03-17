@@ -5,7 +5,7 @@ const { PER_PAGE } = require('../../utils/constants')
 const { createFilterInput } = require('../filters/input')
 const createFieldDefinitions = require('../createFieldDefinitions')
 const { createFieldTypes } = require('../createFieldTypes')
-const { isRefFieldDefinition, createTypeName, validateTypeName } = require('../utils')
+const { isRefFieldDefinition, createTypeName } = require('../utils')
 const { isRefField } = require('../../store/utils')
 
 const {
@@ -21,14 +21,6 @@ const { omit, mapValues, isEmpty, isPlainObject } = require('lodash')
 module.exports = function createNodesSchema (schemaComposer, store) {
   const typeNames = Object.keys(store.collections)
   const schema = {}
-
-  try {
-    typeNames.forEach(validateTypeName)
-  } catch (err) {
-    throw new Error(
-      `Failed to generate GraphQL types for collection. ${err.message}`
-    )
-  }
 
   schemaComposer.createEnumTC({
     name: 'TypeName',
@@ -53,6 +45,19 @@ module.exports = function createNodesSchema (schemaComposer, store) {
       [fieldName]: typeComposer.getResolver('findOne'),
       [allFieldName]: typeComposer.getResolver('findManyPaginated')
     })
+
+    // TODO: remove this field before 1.0
+    const oldAllFieldName = `all${typeName}`
+
+    if (
+      allFieldName !== oldAllFieldName &&
+      !schemaComposer.Query.hasField(oldAllFieldName)
+    ) {
+      schemaComposer.Query.setField(oldAllFieldName, {
+        ...typeComposer.getResolver('findManyPaginated'),
+        deprecationReason: `Use Query.${allFieldName} instead.`
+      })
+    }
   }
 
   createBelongsTo(schemaComposer, store)
@@ -219,7 +224,13 @@ function createTypeResolvers (typeComposer, collection) {
     type: typeName,
     args: {
       id: 'ID',
-      path: 'String'
+      path: 'String',
+      nullable: {
+        type: 'Boolean',
+        defaultValue: false,
+        description: 'Will return an error if not nullable.',
+        deprecationReason: 'Will always return null if not found.'
+      }
     },
     resolve: createFindOneResolver(typeComposer)
   })

@@ -17,13 +17,8 @@ module.exports = async app => {
   config.optimization.minimize(false)
   config.output.libraryTarget('commonjs2')
 
-  config.performance
-    .hints(false)
-    .maxEntrypointSize(Infinity)
-    .maxAssetSize(Infinity)
-
   config.plugin('vue-server-renderer')
-    .use(require('./plugins/VueSSRServerPlugin'), [{
+    .use(require('vue-server-renderer/server-plugin'), [{
       filename: path.relative(outputDir, serverBundlePath)
     }])
 

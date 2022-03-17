@@ -1,9 +1,9 @@
 const moment = require('moment')
 const { Kind } = require('graphql')
-const { SUPPORTED_DATE_FORMATS } = require('../../utils/constants')
+const { ISO_8601_FORMAT } = require('../../utils/constants')
 
 exports.isDate = value => {
-  const date = moment.utc(value, SUPPORTED_DATE_FORMATS, true)
+  const date = moment.utc(value, ISO_8601_FORMAT, true)
   return date.isValid() && typeof value !== 'number'
 }
 
@@ -34,7 +34,7 @@ function formatDate (value, args = {}) {
     const { format, locale = 'en' } = args
 
     return moment
-      .utc(toString(value), SUPPORTED_DATE_FORMATS, true)
+      .utc(toString(value), ISO_8601_FORMAT, true)
       .locale(locale)
       .format(format)
   }

@@ -1,5 +1,5 @@
 const PluginAPI = require('./PluginAPI')
-const { requireEsModule, hashString } = require('../utils')
+const { hashString } = require('../utils')
 const { defaultsDeep } = require('lodash')
 
 const {
@@ -18,9 +18,7 @@ class Plugins {
   constructor(app) {
     this._app = app
     this._plugins = []
-    this._listeners = {
-      configureWebpack: []
-    }
+    this._listeners = []
 
     app.hooks.bootstrap.tapPromise(
       { name: 'loadSource', label: 'Load sources', phase: BOOTSTRAP_SOURCES },
@@ -44,16 +42,12 @@ class Plugins {
     for (const entry of this._app.config.plugins) {
       const { serverEntry } = entry.entries
       const Plugin = typeof serverEntry === 'string'
-        ? requireEsModule(entry.entries.serverEntry)
+        ? require(entry.entries.serverEntry)
         : typeof serverEntry === 'function'
           ? serverEntry
           : null
 
-      if (typeof Plugin !== 'function') {
-        throw new Error(
-          `Plugin at ${entry.entries.serverEntry} did not export a function.`
-        )
-      }
+      if (typeof Plugin !== 'function') continue
 
       const defaults = typeof Plugin.defaultOptions === 'function'
         ? Plugin.defaultOptions()
@@ -100,18 +94,24 @@ class Plugins {
     this._app.schema.buildSchema()
   }
 
-  configureServer(server) {
-    return this.runSync('configureServer', null, server)
+  async configureServer(server) {
+    return this.run('configureServer', null, server)
   }
 
   async createPages() {
-    const { pages } = this._app
+    const { isBootstrapped, pages } = this._app
     const now = Date.now() + process.hrtime()[1]
     const digest = hashString(now.toString())
+
+    if (isBootstrapped) {
+      pages.disableIndices()
+    }
 
     await this.run('createPages', api => {
       return createPagesActions(api, this._app, { digest })
     })
+
+    pages.enableIndices()
 
     await this.run('createManagedPages', api => {
       return createManagedPagesActions(api, this._app, { digest })
@@ -140,26 +140,6 @@ class Plugins {
       const result = typeof cb === 'function'
         ? await handler(cb(api))
         : await handler(...args, api)
-
-      results.push(result)
-      entry.done = true
-    }
-
-    return results
-  }
-
-  runSync(eventName, cb, ...args) {
-    if (!this._listeners[eventName]) return []
-
-    const results = []
-
-    for (const entry of this._listeners[eventName]) {
-      if (entry.options.once && entry.done) continue
-
-      const { api, handler } = entry
-      const result = typeof cb === 'function'
-        ? handler(cb(api))
-        : handler(...args, api)
 
       results.push(result)
       entry.done = true

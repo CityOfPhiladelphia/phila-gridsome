@@ -15,6 +15,7 @@ const validateInput = require('./schemas')
 
 const TYPE_STATIC = 'static'
 const TYPE_DYNAMIC = 'dynamic'
+const isDev = process.env.NODE_ENV === 'development'
 
 const createHash = value => crypto.createHash('md5').update(value).digest('hex')
 const getRouteType = value => /:/.test(value) ? TYPE_DYNAMIC : TYPE_STATIC
@@ -32,43 +33,28 @@ class Pages {
 
     this._componentCache = new LRU({ max: 100 })
     this._queryCache = new LRU({ max: 100 })
+    this._watched = new Map()
     this._watcher = null
 
     this._routes = new Collection('routes', {
-      indices: ['id', 'internal.priority', 'internal.dependencies'],
+      indices: ['id', 'internal.priority'],
       unique: ['id', 'path'],
-      disableMeta: true,
-      adaptiveBinaryIndices: false
+      disableMeta: true
     })
 
     this._pages = new Collection('pages', {
       indices: ['id'],
       unique: ['id', 'path'],
-      disableMeta: true,
-      adaptiveBinaryIndices: false
+      disableMeta: true
     })
 
-    if (process.env.NODE_ENV === 'development') {
-      this.createWatcher()
+    if (isDev) {
+      this._watcher = new FSWatcher({
+        disableGlobbing: true
+      })
+
+      initWatcher(app, this)
     }
-  }
-
-  createWatcher() {
-    this._watcher = new FSWatcher({
-      disableGlobbing: true
-    })
-
-    if (!process.env.GRIDSOME_TEST) {
-      initWatcher(this.app, this)
-    }
-
-    return this._watcher
-  }
-
-  closeWatcher() {
-    return this._watcher.close().then(() => {
-      this._watcher = null
-    })
   }
 
   routes () {
@@ -98,6 +84,23 @@ class Pages {
     this._queryCache.del(component)
   }
 
+  disableIndices () {
+    ['_routes', '_pages'].forEach(prop => {
+      this[prop].configureOptions({
+        adaptiveBinaryIndices: false
+      })
+    })
+  }
+
+  enableIndices () {
+    ['_routes', '_pages'].forEach(prop => {
+      this[prop].ensureAllIndexes()
+      this[prop].configureOptions({
+        adaptiveBinaryIndices: true
+      })
+    })
+  }
+
   createRoute (input, meta = {}) {
     const validated = validateInput('route', input)
     const options = this._createRouteOptions(validated, meta)
@@ -115,7 +118,7 @@ class Pages {
     }
 
     this._routes.insert(options)
-    this._watchFiles(options.internal.dependencies)
+    this._watchComponent(options.component)
 
     return new Route(options, this)
   }
@@ -134,13 +137,7 @@ class Pages {
       meta: oldOptions.meta
     })
 
-    const prevFiles = oldOptions.internal.dependencies.filter(file => {
-      return !newOptions.internal.dependencies.includes(file)
-    })
-
     this._routes.update(newOptions)
-    this._unwatchFiles(prevFiles)
-    this._watchFiles(newOptions.internal.dependencies)
 
     const route = new Route(newOptions, this)
 
@@ -164,7 +161,7 @@ class Pages {
 
     this._pages.findAndRemove({ 'internal.route': id })
     this._routes.findAndRemove({ id })
-    this._unwatchFiles(options.internal.dependencies)
+    this._unwatchComponent(options.component)
   }
 
   createPage (input, meta = {}) {
@@ -310,7 +307,7 @@ class Pages {
 
   _createRouteOptions (options, meta = {}) {
     const component = this.app.resolve(options.component)
-    const { pageQuery, watchFiles = [] } = this._parseComponent(component)
+    const { pageQuery } = this._parseComponent(component)
     const query = this._parseQuery(pageQuery, component)
     const { permalinks: { trailingSlash }} = this.app.config
 
@@ -345,7 +342,6 @@ class Pages {
       path,
       component,
       internal: Object.assign({}, meta, {
-        dependencies: [component, ...watchFiles],
         meta: options.meta || {},
         path: prettyPath,
         isDynamic,
@@ -420,7 +416,7 @@ class Pages {
 
     if (hook) {
       const source = fs.readFileSync(component, 'utf8')
-      results = hook.call(source, { resourcePath: component })
+      results = hook.call(source, { resourcePath: component }) //
     }
 
     this._componentCache.set(component, validateInput('component', results || {}))
@@ -428,21 +424,17 @@ class Pages {
     return results
   }
 
-  _watchFiles (files) {
-    if (this._watcher) {
-      this._watcher.add(files)
+  _watchComponent (component) {
+    if (!this._watched.has(component)) {
+      this._watched.set(component, true)
+      if (this._watcher) this._watcher.add(component)
     }
   }
 
-  _unwatchFiles (files) {
-    if (this._watcher) {
-      for (const filePath of files) {
-        const query = { 'internal.dependencies': { $contains: filePath } }
-
-        if (!this._routes.count(query)) {
-          this._watcher.unwatch(filePath)
-        }
-      }
+  _unwatchComponent (component) {
+    if (this._routes.find({ component }).length <= 0) {
+      this._watched.delete(component)
+      if (this._watcher) this._watcher.unwatch(component)
     }
   }
 }

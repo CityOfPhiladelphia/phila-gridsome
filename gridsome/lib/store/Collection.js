@@ -22,7 +22,6 @@ class Collection {
     this._collection = new Loki.Collection(typeName, {
       indices: ['id', 'internal.typeName', ...(options._indices || [])],
       unique: ['id', ...(options._unique || [])],
-      adaptiveBinaryIndices: false,
       disableMeta: true
     })
 

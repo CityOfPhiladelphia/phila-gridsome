@@ -1,6 +1,5 @@
 import fetch from './fetch'
 import router from './router'
-import { NOT_FOUND_NAME } from '#gridsome/constants'
 
 import {
   getResults,
@@ -12,7 +11,7 @@ export default function fetchPath (path) {
   if (process.isServer) {
     throw new Error(
       `Cannot fetch ${path} while rendering HTML. ` +
-      `This method should only be used in the mounted hook.`
+      `This method should ony be used in the mounted hook.`
     )
   }
 
@@ -22,7 +21,7 @@ export default function fetchPath (path) {
 
   return new Promise((resolve, reject) => {
     if (route.fullPath !== path) return reject(notFoundErr)
-    if (route.name === NOT_FOUND_NAME) return reject(notFoundErr)
+    if (route.name === '*') return reject(notFoundErr)
     if (cached) return resolve(cached)
 
     fetch(route)

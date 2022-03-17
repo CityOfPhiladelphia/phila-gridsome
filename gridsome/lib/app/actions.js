@@ -213,6 +213,13 @@ function createPagesActions (api, app, { digest }) {
     },
 
     createPage (options) {
+      if (typeof options.route === 'string') {
+        deprecate(`The route option for createPage() is deprecated. Use the createRoute() method instead.`, {
+          url: 'https://gridsome.org/docs/pages-api/'
+        })
+        return createDeprecatedRoute(app.pages, options, internals)
+      }
+
       if (options.name) {
         deprecate(`The name option for createPage() is moved to route.name.`)
         options.route = options.route || {}
@@ -237,6 +244,13 @@ function createManagedPagesActions (api, app, { digest }) {
     ...baseActions,
 
     createPage (options) {
+      if (typeof options.route === 'string') {
+        deprecate(`The route option in createPage() is deprecated. Use the createRoute() action instead.`, {
+          url: 'https://gridsome.org/docs/pages-api/'
+        })
+        return createDeprecatedRoute(app.pages, options, internals)
+      }
+
       if (options.name) {
         options.route = options.route || {}
         options.route.name = options.name
@@ -246,6 +260,13 @@ function createManagedPagesActions (api, app, { digest }) {
       return app.pages.createPage(options, internals)
     },
     updatePage (options) {
+      if (typeof options.route === 'string') {
+        deprecate(`The route option in createPage() is deprecated. Use the createRoute() action instead.`, {
+          url: 'https://gridsome.org/docs/pages-api/'
+        })
+        return createDeprecatedRoute(app.pages, options, internals)
+      }
+
       if (options.name) {
         deprecate(`The name option in createPage() has moved to route.name.`)
         options.route = options.route || {}
@@ -280,6 +301,26 @@ function createManagedPagesActions (api, app, { digest }) {
       app.pages.removeRoute(id)
     }
   }
+}
+
+// TODO: remove this route workaround
+function createDeprecatedRoute (pages, input, internals) {
+  const options = pages._routes.by('path', input.route)
+  let route = options ? pages.getRoute(options.id) : null
+
+  if (!route) {
+    route = pages.createRoute({
+      path: input.route,
+      component: input.component
+    }, internals)
+  }
+
+  route.addPage({
+    id: input.id,
+    path: input.path,
+    context: input.context,
+    queryVariables: input.queryVariables
+  })
 }
 
 module.exports = {

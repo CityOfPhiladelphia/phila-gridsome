@@ -1,6 +1,6 @@
 import prefetch from './utils/prefetch'
 import { unslashEnd } from './utils/helpers'
-import { NOT_FOUND_PATH, NOT_FOUND_NAME } from '#gridsome/constants'
+import { NOT_FOUND_PATH } from '/tmp/.wow/constants' // derrick edit
 
 const dataUrl = process.env.DATA_URL
 const isPrefetched = {}
@@ -13,7 +13,7 @@ export default (route, options = {}) => {
     const { dynamic = false } = route.meta
     let path = dynamic ? route.matched[0].path : route.path
 
-    if (route.name === NOT_FOUND_NAME) {
+    if (route.name === '*') {
       path = NOT_FOUND_PATH
     }
 
@@ -53,11 +53,12 @@ export default (route, options = {}) => {
     })
   }
 
-  const { __INITIAL_STATE__ = {} } = global
-  const { hash } = __INITIAL_STATE__
+  const hashMeta = document
+    .querySelector('meta[name="gridsome:hash"]')
+    .getAttribute('content')
 
   return new Promise((resolve, reject) => {
-    const usePath = route.name === NOT_FOUND_NAME ? NOT_FOUND_PATH : route.path
+    const usePath = route.name === '*' ? NOT_FOUND_PATH : route.path
     const jsonPath = route.meta.dataPath || unslashEnd(usePath) + '/index.json'
     const absPath = unslashEnd(dataUrl) + jsonPath
 
@@ -77,10 +78,10 @@ export default (route, options = {}) => {
 
     return isLoaded[jsonPath]
       .then(res => {
-        if (res.hash !== hash) {
+        if (res.hash !== hashMeta) {
           reject(
             createError(
-              `Hash did not match: json=${res.hash}, document=${hash}`,
+              `Hash did not match: json=${res.hash}, document=${hashMeta}`,
               'INVALID_HASH'
             )
           )

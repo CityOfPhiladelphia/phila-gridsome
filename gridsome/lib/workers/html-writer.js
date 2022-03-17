@@ -24,7 +24,17 @@ exports.render = async function ({
 
   for (let i = 0; i < length; i++) {
     const page = pages[i]
-    const html = await render(page, hash)
+    let state = undefined
+    let stateSize = undefined
+
+    if (page.dataOutput) {
+      const content = await fs.readFile(page.dataOutput, 'utf8')
+
+      stateSize = content.length
+      state = JSON.parse(content)
+    }
+
+    const html = await render(page, state, stateSize, hash)
 
     await fs.outputFile(page.htmlOutput, html)
   }

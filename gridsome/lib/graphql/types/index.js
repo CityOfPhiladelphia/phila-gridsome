@@ -1,6 +1,6 @@
 const { createDateScalar } = require('./date')
 const { createFileScalar } = require('./file')
-const { createImageScalar, createImageFitEnum, createImagePositionEnum } = require('./image')
+const { createImageScalar, createImageFitEnum } = require('./image')
 
 module.exports = schemaComposer => {
   const nodeInterface = schemaComposer.createInterfaceTC({
@@ -32,7 +32,6 @@ module.exports = schemaComposer => {
   const fileScalarType = createFileScalar(schemaComposer)
   const imageScalarType = createImageScalar(schemaComposer)
   const imageFitEnum = createImageFitEnum(schemaComposer)
-  const imagePositionEnum = createImagePositionEnum(schemaComposer)
 
   const pageInfoType = schemaComposer.createObjectTC({
     name: 'PageInfo',
@@ -86,7 +85,6 @@ module.exports = schemaComposer => {
     fileScalarType,
     imageScalarType,
     imageFitEnum,
-    imagePositionEnum,
     pageInfoType,
     sortOrderType,
     sortType

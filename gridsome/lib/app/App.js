@@ -4,17 +4,23 @@ const hirestime = require('hirestime')
 const { info } = require('../utils/log')
 const isRelative = require('is-relative')
 const { version } = require('../../package.json')
-const { AsyncSeriesHook, SyncWaterfallHook } = require('tapable')
+const { deprecate } = require('../utils/deprecate')
+
+const {
+  SyncHook,
+  AsyncSeriesHook,
+  SyncWaterfallHook
+} = require('tapable')
 
 const { BOOTSTRAP_FULL } = require('../utils/constants')
 
 class App {
-  constructor (context, options = {}) {
+  constructor (context, options) {
     process.GRIDSOME = this
 
     this.clients = {}
     this.context = context
-    this.options = options
+    this.config = require('./loadConfig')(context, options)
     this.isInitialized = false
     this.isBootstrapped = false
 
@@ -22,7 +28,14 @@ class App {
       beforeBootstrap: new AsyncSeriesHook([]),
       bootstrap: new AsyncSeriesHook(['app']),
       renderQueue: new SyncWaterfallHook(['renderQueue']),
-      redirects: new SyncWaterfallHook(['redirects', 'renderQueue'])
+      redirects: new SyncWaterfallHook(['redirects', 'renderQueue']),
+      server: new SyncHook(['server'])
+    }
+
+    if (this.config.permalinks.slugify) {
+      this._slugify = this.config.permalinks.slugify.use
+    } else {
+      this._slugify = v => v
     }
 
     autoBind(this)
@@ -82,7 +95,6 @@ class App {
   //
 
   async init () {
-    const loadConfig = require('./loadConfig')
     const Plugins = require('./Plugins')
     const Store = require('../store/Store')
     const Schema = require('./Schema')
@@ -91,7 +103,6 @@ class App {
     const Pages = require('../pages/pages')
     const Compiler = require('./Compiler')
 
-    this.config = await loadConfig(this.context, this.options)
     this.plugins = new Plugins(this)
     this.store = new Store(this)
     this.schema = new Schema(this)
@@ -100,7 +111,9 @@ class App {
     this.codegen = new Codegen(this)
     this.compiler = new Compiler(this)
 
-    this.config = Object.freeze(this.config)
+    // TODO: remove before 1.0
+    this.queue = this.assets
+    deprecate.property(this, 'queue', 'The property app.queue is deprecated. Use app.assets instead.')
 
     info(`Initializing plugins...`)
 
@@ -123,8 +136,6 @@ class App {
       this.plugins.on('configureServer', { handler: this.config.configureServer })
     }
 
-    await this.compiler.initialize()
-
     this.isInitialized = true
 
     return this
@@ -143,13 +154,7 @@ class App {
   }
 
   slugify (value = '') {
-    if (this.config && this.config.permalinks) {
-      const { slugify } = this.config.permalinks
-      if (typeof slugify.use === 'function') {
-        return slugify.use(value, slugify.options)
-      }
-    }
-    return value
+    return this._slugify(value, this.config.permalinks.slugify.options)
   }
 
   graphql (docOrQuery, variables = {}) {

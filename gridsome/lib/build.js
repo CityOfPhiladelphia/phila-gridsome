@@ -54,12 +54,18 @@ module.exports = async (context, args) => {
 
 async function runWebpack (app) {
   const compileTime = hirestime()
+  const compileAssets = require('./webpack/compileAssets')
+  const { removeStylesJsChunk } = require('./webpack/utils')
 
   if (!process.stdout.isTTY) {
     info(`Compiling assets...`)
   }
 
-  const stats = await app.compiler.run()
+  const stats = await compileAssets(app)
+
+  if (app.config.css.split !== true) {
+    await removeStylesJsChunk(stats, app.config.outputDir)
+  }
 
   info(`Compile assets - ${compileTime(hirestime.S)}s`)
 

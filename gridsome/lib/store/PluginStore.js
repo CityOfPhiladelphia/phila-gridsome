@@ -5,6 +5,7 @@ const autoBind = require('auto-bind')
 const camelCase = require('camelcase')
 const { deprecate } = require('../utils/deprecate')
 const { mapValues, isPlainObject } = require('lodash')
+const { cache, nodeCache } = require('../utils/cache')
 const { resolvePath } = require('./utils')
 
 class PluginStore {
@@ -92,12 +93,22 @@ class PluginStore {
   }
 
   _createTransformer (TransformerClass, options, localOptions = {}) {
-    return new TransformerClass(options, {
+    const args = {
       resolveNodeFilePath: this._resolveNodeFilePath,
       context: this._app.context,
       assets: this._app.assets,
-      localOptions
-    })
+      localOptions,
+      // TODO: remove before 1.0
+      queue: this._app.assets,
+      nodeCache,
+      cache
+    }
+
+    deprecate.property(args, 'queue', 'The queue property is renamed to assets.')
+    deprecate.property(args, 'nodeCache', 'Do not use the nodeCache property. It will be removed.')
+    deprecate.property(args, 'cache', 'Do not use the cache property. It will be removed.')
+
+    return new TransformerClass(options, args)
   }
 
   _addTransformer (TransformerClass, options = {}) {

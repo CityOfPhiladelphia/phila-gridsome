@@ -40,7 +40,6 @@ export default {
 
         attrs.src = isLazy ? dataUri : src
         attrs.width = size.width
-        attrs.height = size.height
 
         if (isLazy) attrs['data-src'] = src
         if (srcset.length) attrs[`${isLazy ? 'data-' : ''}srcset`] = Array.isArray(srcset) ? srcset.join(', ') : srcset
@@ -86,7 +85,6 @@ export default {
           innerHTML: `` +
             `<img src="${props.src.src}" class="${stringifyClass(noscriptClassNames)}"` +
             (attrs.width ? ` width="${attrs.width}"`: '') +
-            (attrs.height ? ` height="${attrs.height}"`: '') +
             (attrs.alt ? ` alt="${attrs.alt}"` : '') +
             `>`
         }

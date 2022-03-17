@@ -1,4 +1,4 @@
-import config from '#gridsome/config'
+import config from '/tmp/.wow/config' // derrick edit
 
 const re = new RegExp(`^${config.pathPrefix}/?`)
 

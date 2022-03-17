@@ -1,17 +1,15 @@
 const path = require('path')
 const glob = require('globby')
-const fs = require('fs-extra')
-const { distance } = require('fastest-levenshtein')
+const leven = require('leven')
 const crypto = require('crypto')
 const moment = require('moment')
 const chokidar = require('chokidar')
 const pathToRegexp = require('path-to-regexp')
-const { validateTypeName } = require('../graphql/utils')
-const { SUPPORTED_DATE_FORMATS } = require('../utils/constants')
+const { deprecate } = require('../utils/deprecate')
+const { ISO_8601_FORMAT } = require('../utils/constants')
 const { isPlainObject, trimStart, trimEnd, get, memoize } = require('lodash')
 
 const isDev = process.env.NODE_ENV === 'development'
-const isUnitTest = process.env.GRIDSOME_TEST === 'unit'
 const FROM_CONTENT_TYPE = 'content-type'
 const FROM_CONFIG = 'config'
 
@@ -19,8 +17,8 @@ const makeId = (uid, name) => {
   return crypto.createHash('md5').update(uid + name).digest('hex')
 }
 
-const makePath = (object, { routeKeys, createPath }, dateField = 'date', slugify) => {
-  const date = memoize(() => moment.utc(object[dateField], SUPPORTED_DATE_FORMATS, true))
+const makePath = (object, { path, routeKeys, createPath }, dateField = 'date', slugify) => {
+  const date = memoize(() => moment.utc(object[dateField], ISO_8601_FORMAT, true))
   const length = routeKeys.length
   const params = {}
 
@@ -31,6 +29,19 @@ const makePath = (object, { routeKeys, createPath }, dateField = 'date', slugify
   for (let i = 0; i < length; i++) {
     const { name, fieldName, repeat, suffix } = routeKeys[i]
     let { path: fieldPath } = routeKeys[i]
+
+    // TODO: remove before 1.0
+    // let slug fallback to title
+    if (name === 'slug' && !object.slug) {
+      deprecate(
+        `You have a :slug parameter in your route (${path}) but no slug ` +
+        `field exist on the node. The title field will be used instead ` +
+        `but you should change to :title in the route or use another field. ` +
+        `This fallback will be removed in v0.8.`,
+        { stackIndex: 5 }
+      )
+      fieldPath = ['title']
+    }
 
     const field = get(object, fieldPath, fieldName)
 
@@ -51,12 +62,9 @@ const makePath = (object, { routeKeys, createPath }, dateField = 'date', slugify
         ) {
           return String(value.id)
         } else if (!isPlainObject(value)) {
-          const slugifyValue = slugify(String(value))
-          if (suffix === 'raw' || slugifyValue === '') {
-            return String(value)
-          } else {
-            return slugifyValue
-          }
+          return suffix === 'raw'
+            ? String(value)
+            : slugify(String(value))
         } else {
           return ''
         }
@@ -115,20 +123,14 @@ const createTemplateOptions = (options, trailingSlash) => {
   }
 }
 
-const setupTemplates = ({ context, templates, permalinks }) => {
+const setupTemplates = ({ templates, permalinks }) => {
   const res = {
     byComponent: new Map(),
     byTypeName: new Map()
   }
 
   for (const typeName in templates) {
-    validateTypeName(typeName)
     templates[typeName].forEach(options => {
-      if (!isDev && !isUnitTest && !fs.existsSync(options.component)) {
-        const relPath = path.relative(context, options.component)
-        throw new Error(`Could not find component for the ${typeName} template: ${relPath}`)
-      }
-
       const byTypeName = res.byTypeName.get(typeName) || []
       const byComponent = res.byComponent.get(options.component) || []
       const template = createTemplateOptions(options, permalinks.trailingSlash)
@@ -230,7 +232,7 @@ class TemplatesPlugin {
       for (const typeName of templates.byTypeName.keys()) {
         if (!typeNames.includes(typeName)) {
           const suggestion = typeNames.find(value => {
-            return distance(value, typeName) < 3
+            return leven(value, typeName) < 3
           })
 
           throw new Error(

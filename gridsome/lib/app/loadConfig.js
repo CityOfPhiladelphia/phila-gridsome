@@ -1,28 +1,13 @@
 const path = require('path')
-const chalk = require('chalk')
 const fs = require('fs-extra')
 const Joi = require('@hapi/joi')
 const crypto = require('crypto')
 const dotenv = require('dotenv')
 const isRelative = require('is-relative')
 const colorString = require('color-string')
-const enhancedResolve = require('enhanced-resolve')
 const { deprecate } = require('../utils/deprecate')
 const { defaultsDeep, camelCase, isString, isFunction } = require('lodash')
 const { internalRE, transformerRE, SUPPORTED_IMAGE_TYPES } = require('../utils/constants')
-const { requireEsModule } = require('../utils')
-
-const resolve = enhancedResolve.create.sync({
-  extensions: ['.js', '.ts']
-})
-
-const tryResolve = (ctx, p) => {
-  try {
-    return resolve(ctx, p)
-  } catch (err) {
-    return undefined
-  }
-}
 
 const builtInPlugins = [
   path.resolve(__dirname, '../plugins/vue-components'),
@@ -32,12 +17,15 @@ const builtInPlugins = [
 ]
 
 // TODO: use joi to define and validate config schema
-module.exports = async (context, options = {}) => {
+module.exports = (context, options = {}) => {
   const env = resolveEnv(context)
 
   Object.assign(process.env, env)
 
   const resolve = (...p) => path.join(context, ...p)
+  const isProd = process.env.NODE_ENV === 'production'
+  const customConfig = options.config || options.localConfig
+  const configPath = resolve('gridsome.config.js')
   const args = options.args || {}
   const config = {}
   const plugins = []
@@ -46,9 +34,7 @@ module.exports = async (context, options = {}) => {
     split: false,
     loaderOptions: {
       sass: {
-        sassOptions: {
-          indentedSyntax: true
-        }
+        indentedSyntax: true
       },
       stylus: {
         preferPathResolver: 'webpack'
@@ -56,23 +42,11 @@ module.exports = async (context, options = {}) => {
     }
   }
 
-  const configEntryPath = tryResolve(context, './gridsome.config')
-  const serverEntryPath = tryResolve(context, './gridsome.server')
-  const isTS = string => /\.ts$/.test(String(string))
-
-  if ([configEntryPath, serverEntryPath].filter(isTS).length) {
-    console.log(
-      chalk.yellow('warn'),
-      '- TypeScript support for the config and server entries is experimental and may introduce breaking changes at any time.\n'
-    )
-    registerTsExtension()
-  }
-
-  const localConfig = options.config || options.localConfig || {}
-
-  if (!options.localConfig && configEntryPath) {
-    Object.assign(localConfig, requireEsModule(configEntryPath))
-  }
+  const localConfig = customConfig
+    ? customConfig
+    : fs.existsSync(configPath)
+      ? require(configPath)
+      : {}
 
   // use provided plugins instead of local plugins
   if (Array.isArray(options.plugins)) {
@@ -90,59 +64,60 @@ module.exports = async (context, options = {}) => {
     })
   }
 
-  // add server entry as plugin
-  if (serverEntryPath) {
-    plugins.push(requireEsModule(serverEntryPath))
-  }
+  // add project root as plugin
+  plugins.push(context)
 
   const assetsDir = localConfig.assetsDir || 'assets'
 
   config.context = context
-  config.configPath = configEntryPath
-  config.mode = options.mode || 'production'
   config.pkg = options.pkg || resolvePkg(context)
-  config.host = args.host || localConfig.host || undefined
+  config.host = args.host || localConfig.host || '0.0.0.0'
   config.port = parseInt(args.port || localConfig.port, 10) || undefined
-  config.cache = args.cache !== false
-  config.https = args.https
   config.plugins = normalizePlugins(context, plugins)
   config.redirects = normalizeRedirects(localConfig)
   config.transformers = resolveTransformers(config.pkg, localConfig)
-  config.pathPrefix = normalizePathPrefix(config.mode === 'production' ? localConfig.pathPrefix : '')
+  config.pathPrefix = normalizePathPrefix(isProd ? localConfig.pathPrefix : '')
   config._pathPrefix = normalizePathPrefix(localConfig.pathPrefix)
   config.publicPath = config.pathPrefix ? `${config.pathPrefix}/` : '/'
   config.staticDir = resolve('static')
 
+  // TODO: remove outDir before 1.0
   config.outputDir = resolve(localConfig.outputDir || localConfig.outDir || 'dist')
+  config.outDir = config.outputDir
+  deprecate.property(config, 'outDir', 'The outDir config is renamed to outputDir.')
+  if (localConfig.outDir) {
+    deprecate(`The outDir config is renamed to outputDir.`, {
+      customCaller: ['gridsome.config.js']
+    })
+  }
+
   config.assetsDir = path.join(config.outputDir, assetsDir)
   config.imagesDir = path.join(config.assetsDir, 'static')
   config.filesDir = path.join(config.assetsDir, 'files')
   config.dataDir = path.join(config.assetsDir, 'data')
   config.appPath = path.resolve(__dirname, '../../app')
-
-  // Cache paths
-  if (process.versions.pnp === '1') {
-    config.cacheDir = resolve('.pnp/.cache/gridsome')
-  } else if (process.versions.pnp === '3') {
-    config.cacheDir = resolve('.yarn/.cache/gridsome')
-  } else {
-    config.cacheDir = resolve('node_modules/.cache/gridsome')
-  }
-  config.appCacheDir = path.join(config.cacheDir, 'app')
-  config.imageCacheDir = path.join(config.cacheDir, 'assets')
-
+  config.tmpDir = resolve('../../tmp/.wow') // derrick edit
+  config.cacheDir = resolve('.cache')
+  config.imageCacheDir = resolve('.cache', assetsDir, 'static')
   config.maxImageWidth = localConfig.maxImageWidth || 2560
   config.imageExtensions = SUPPORTED_IMAGE_TYPES
   config.pagesDir = resolve(localConfig._pagesDir || './src/pages')
   config.templatesDir = resolve(localConfig._templatesDir || './src/templates')
   config.templates = normalizeTemplates(context, config, localConfig)
   config.permalinks = normalizePermalinks(localConfig.permalinks)
-  config.images = normalizeImages(localConfig.images)
   config.componentParsers = []
 
   config.chainWebpack = localConfig.chainWebpack
   config.configureWebpack = localConfig.configureWebpack
   config.configureServer = localConfig.configureServer
+
+  config.images = {
+    compress: true,
+    defaultBlur: 40,
+    defaultQuality: 75,
+    backgroundColor: null,
+    ...localConfig.images
+  }
 
   if (!colorString.get(config.images.backgroundColor || '')) {
     config.images.backgroundColor = null
@@ -162,6 +137,14 @@ module.exports = async (context, options = {}) => {
   config.titleTemplate = localConfig.titleTemplate || `%s - ${config.siteName}`
   config.siteDescription = localConfig.siteDescription || ''
   config.metadata = localConfig.metadata || {}
+
+  // TODO: remove before 1.0
+  if (localConfig.metaData) {
+    deprecate(`The metaData config is renamed to metadata.`, {
+      customCaller: ['gridsome.config.js']
+    })
+    config.metadata = localConfig.metaData
+  }
 
   config.manifestsDir = path.join(config.assetsDir, 'manifest')
   config.clientManifestPath = path.join(config.manifestsDir, 'client.json')
@@ -183,28 +166,7 @@ module.exports = async (context, options = {}) => {
 
   config.catchLinks = typeof localConfig.catchLinks === 'boolean' ? localConfig.catchLinks : true
 
-  return config
-}
-
-function registerTsExtension() {
-  const { transformSync } = require('esbuild')
-  const { extensions } = require
-
-  const loader = extensions['.ts'] || extensions['.js']
-
-  extensions['.ts'] = (module, filename) => {
-    const _compile = module._compile
-
-    module._compile = function(rawSource, filename) {
-      const url = JSON.stringify(`file://${filename}`)
-      const source = rawSource.replace(/\bimport\.meta\.url\b/g, url)
-      const { code } = transformSync(source, { loader: 'ts', format: 'cjs' })
-
-      _compile.call(this, code, filename)
-    }
-
-    loader(module, filename)
-  }
+  return Object.freeze(config)
 }
 
 function resolveEnv (context) {
@@ -439,14 +401,8 @@ function resolvePluginEntries (id, context) {
     dirName = id
   } else if (id.startsWith('~/')) {
     dirName = path.join(context, id.replace(/^~\//, ''))
-    deprecate(`The ~ alias for plugin paths is deprecated. Use a relative path instead.`, {
-      customCaller: ['gridsome.config.js']
-    })
-  } else if (id.startsWith('.')) {
-    dirName = resolve(context, id)
   } else {
-    const resolvedPath = require.resolve(id, { paths: [context] })
-    dirName = path.dirname(resolvedPath)
+    dirName = path.dirname(require.resolve(id))
   }
 
   if (
@@ -507,67 +463,10 @@ function resolveTransformers (pkg, config) {
   return result
 }
 
-function normalizeImages (config = {}) {
-  const defaultPlaceholder = {
-    type: 'blur',
-    defaultBlur: 20
-  }
-
-  if (typeof config.placeholder === 'string') {
-    config.placeholder = {
-      type: config.placeholder
-    }
-  }
-
-  if (typeof config.defaultBlur !== 'undefined') {
-    config.placeholder = {
-      ...defaultPlaceholder,
-      defaultBlur: config.defaultBlur,
-      ...config.placeholder
-    }
-    deprecate(`The images.defaultBlur option has moved to images.placeholder.defaultBlur.`, {
-      customCaller: ['gridsome.config.js']
-    })
-  }
-
-  const { error, value } = Joi.validate(
-    config,
-    Joi.object().label('Images').keys({
-      compress: Joi.boolean().default(true),
-      defaultQuality: Joi.number().default(75).min(0).max(100),
-      backgroundColor: Joi.string().allow(null).default(null),
-      defaultBlur: Joi.number().default(defaultPlaceholder.defaultBlur),
-      placeholder: Joi.alternatives()
-        .default(defaultPlaceholder)
-        .try([
-          Joi.object().label('Blur').keys({
-            type: Joi.string().default('blur').valid('blur'),
-            defaultBlur: Joi.number().min(0).default(defaultPlaceholder.defaultBlur)
-          }),
-          Joi.object().label('Trace').keys({
-            type: Joi.string().required().valid('trace'),
-            background: Joi.string().default(undefined),
-            color: Joi.string().default(undefined),
-            threshold: Joi.number().min(0).max(255).default(120)
-          }),
-          Joi.object().label('Dominant').keys({
-            type: Joi.string().required().valid('dominant')
-          })
-        ])
-    })
-  )
-
-  if (error) {
-    throw new Error(error.message)
-  }
-
-  return value
-}
-
 function normalizeIconsConfig (config = {}) {
   const res = {}
 
-  const faviconSizes = [16, 32, 96, 192, 196]
+  const faviconSizes = [16, 32, 96]
   const touchiconSizes = [76, 152, 120, 167, 180]
   const defaultIcon = './src/favicon.png'
   const icon = typeof config === 'string' ? { favicon: config } : (config || {})
@@ -582,5 +481,3 @@ function normalizeIconsConfig (config = {}) {
 
   return res
 }
-
-module.exports.builtInPlugins = builtInPlugins

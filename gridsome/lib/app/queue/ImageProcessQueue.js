@@ -5,8 +5,10 @@ const crypto = require('crypto')
 const mime = require('mime-types')
 const colorString = require('color-string')
 const md5File = require('md5-file/promise')
+const svgDataUri = require('mini-svg-data-uri')
 const { forwardSlash } = require('../../utils')
-const { reject, pickBy } = require('lodash')
+const { warmupSharp } = require('../../utils/sharp')
+const { reject } = require('lodash')
 
 class ImageProcessQueue {
   constructor ({ context, config }) {
@@ -51,6 +53,7 @@ class ImageProcessQueue {
     const relPath = path.relative(this.context, filePath)
     const { name, ext } = path.parse(filePath)
     const mimeType = mime.lookup(filePath)
+    const defaultBlur = this.config.images.defaultBlur
 
     if (!imageExtensions.includes(ext.toLowerCase())) {
       throw new Error(
@@ -65,13 +68,14 @@ class ImageProcessQueue {
 
     const hash = await md5File(filePath)
     const fileBuffer = await fs.readFile(filePath)
+    const warmSharp = await warmupSharp(sharp)
 
     let pipeline
     let metadata
 
     try {
       // Rotate based on EXIF Orientation tag
-      pipeline = sharp(fileBuffer).rotate()
+      pipeline = warmSharp(fileBuffer).rotate()
       metadata = await pipeline.metadata()
     } catch (err) {
       throw new Error(`Failed to process image ${relPath}. ${err.message}`)
@@ -171,19 +175,20 @@ class ImageProcessQueue {
     if (isLazy && isSrcset) {
       classNames.push('g-image--lazy')
 
-      results.dataUri = await createPlaceholder(
-        this.config.images.placeholder,
+      results.dataUri = await createDataUri(
         pipeline,
         mimeType,
         imageWidth,
         imageHeight,
+        defaultBlur,
         options
       )
 
       results.noscriptHTML = '' +
         `<noscript>` +
         `<img class="${classNames.join(' ')} g-image--loaded" ` +
-        `src="${results.src}" width="${results.size.width}" height="${results.size.height}"` +
+        `src="${results.src}" width="${results.size.width}"` +
+        (options.height ? ` height="${options.height}"` : '') +
         (options.alt ? ` alt="${options.alt}">` : '>') +
         `</noscript>`
 
@@ -193,8 +198,8 @@ class ImageProcessQueue {
     results.imageHTML = '' +
       `<img class="${classNames.join(' ')}" ` +
       `src="${isLazy ? results.dataUri || results.src : results.src}" ` +
-      `width="${results.size.width}" ` +
-      `height="${results.size.height}"` +
+      `width="${results.size.width}"` +
+      (options.height ? ` height="${options.height}"` : '') +
       (options.alt ? ` alt="${options.alt}"` : '') +
       (isLazy && isSrcset ? ` data-srcset="${results.srcset.join(', ')}"` : '') +
       (isLazy && isSrcset ? ` data-sizes="${results.sizes}"` : '') +
@@ -313,139 +318,67 @@ function createOptionsQuery (arr) {
   }, []).join('&')
 }
 
-function createSvgDataURI (svg) {
-  const { optimize } = require('svgo')
-  const { data } = optimize(svg, {
-    multipass: true,
-    floatPrecision: 0,
-    datauri: 'base64'
-  })
+async function createDataUri (pipeline, type, width, height, defaultBlur, options = {}) {
+  const blur = options.blur !== undefined ? parseInt(options.blur, 10) : defaultBlur
 
-  return data
-}
-
-async function createPlaceholder (placeholder, pipeline, mimeType, width, height, options = {}) {
   const resizeOptions = {}
 
   if (options.fit) resizeOptions.fit = sharp.fit[options.fit]
   if (options.position) resizeOptions.position = sharp.position[options.position]
   if (options.background) resizeOptions.background = options.background
 
-  const placeholderWidth = Math.min(24, Math.floor(width / 10))
-  const placeholderHeight = Math.floor(height * (placeholderWidth / width))
-  const params = {
-    mimeType,
-    options,
-    pipeline,
-    placeholder,
-    placeholderWidth,
-    placeholderHeight,
-    width,
-    height,
-    resizeOptions
-  }
+  const blurredSvg = await createBlurSvg(pipeline, type, width, height, blur, resizeOptions)
 
-  switch (placeholder.type) {
-    case 'blur':
-      return createBlurPlaceholder(params)
-    case 'trace':
-      return createTracePlaceholder(params)
-    case 'dominant':
-      return createDominantPlaceholder(params)
-  }
-
-  throw new Error(`Unknown placeholder type: ${placeholder.type}`)
-}
-
-async function createBlurPlaceholder ({
-  width,
-  height,
-  options,
-  pipeline,
-  resizeOptions,
-  placeholder,
-  placeholderWidth,
-  placeholderHeight
-}) {
-  const blur = options.blur !== undefined ? parseInt(options.blur, 10) : placeholder.defaultBlur
-
-  return new Promise((resolve, reject) => {
-    pipeline
-      .resize(placeholderWidth, placeholderHeight, resizeOptions)
-      .png({ quality: 25 })
-      .toBuffer(async (err, buffer) => {
-        if (err) return reject(err)
-        const base64 = buffer.toString('base64')
-        const id = `__svg-blur-${genHash(base64)}`
-        const filter = []
-        if (blur > 0) {
-          filter.push(`<filter id="${id}"><feGaussianBlur in="SourceGraphic" stdDeviation="${blur}" /></filter>`)
-        }
-        const placeholder = [
-          `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">`,
-          ...filter,
-          `<image href="data:image/png;base64,${base64}" `,
-          `x="${-blur}" y="${-blur}" width="${width + (blur * 2)}" height="${height + (blur * 2)}" `,
-          filter.length ? `filter="url(#${id})" ` : '',
-          `preserveAspectRatio="none" />`,
-          `</svg>`
-        ].join('')
-        resolve(`data:image/svg+xml,${encodeURIComponent(placeholder)}`)
-      })
-  })
-}
-
-async function createTracePlaceholder ({
-  width,
-  height,
-  pipeline,
-  options,
-  resizeOptions,
-  placeholder,
-  placeholderWidth,
-  placeholderHeight
-}) {
-  const potrace = require('potrace')
-
-  const resizeWidth = Math.min(placeholderWidth * 10, width)
-  const resizeHeight = Math.min(placeholderHeight * 10, height)
-
-  return new Promise((resolve, reject) => {
-    pipeline
-    .resize(resizeWidth, resizeHeight, resizeOptions)
-    .toBuffer(async (err, buffer) => {
-      if (err) return reject(err)
-
-      const potraceOptions = pickBy({
-        ...placeholder,
-        type: undefined,
-        background: options.background || placeholder.background
-      }, (value) => typeof value !== 'undefined')
-
-      if (potraceOptions.background === 'auto') {
-        const { dominant } = await pipeline.stats()
-        potraceOptions.background = `rgb(${dominant.r},${dominant.g},${dominant.b})`
-      }
-
-      potrace.trace(buffer, potraceOptions, (err, svg) => {
-        if (err) return reject(err)
-        resolve(createSvgDataURI(svg))
-      })
-    })
-  })
-}
-
-async function createDominantPlaceholder({ width, height, pipeline }) {
-  const { dominant } = await pipeline.stats()
-  const rgbStr = `rgb(${dominant.r},${dominant.g},${dominant.b})`
-
-  const svg =  '' +
-    `<svg fill="${rgbStr}" viewBox="0 0 ${width} ${height}" ` +
-    `xmlns="http://www.w3.org/2000/svg">` +
-    `<rect width="${width}" height="${height}"></rect>` +
+  return svgDataUri(
+    `<svg fill="none" viewBox="0 0 ${width} ${height}" ` +
+    `xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">` +
+    blurredSvg +
     `</svg>`
-
-  return createSvgDataURI(svg)
+  )
 }
+
+async function createBlurSvg (pipeline, mimeType, width, height, blur, resize = {}) {
+  const blurWidth = 64
+  const blurHeight = Math.round(height * (blurWidth / width))
+  const buffer = await pipeline
+    .resize(blurWidth, blurHeight, resize)
+    .toBuffer()
+  const base64 = buffer.toString('base64')
+  const id = `__svg-blur-${genHash(base64)}`
+  let defs = ''
+
+  if (blur > 0) {
+    defs = '' +
+      '<defs>' +
+      `<filter id="${id}">` +
+      `<feGaussianBlur in="SourceGraphic" stdDeviation="${blur}"/>` +
+      `</filter>` +
+      '</defs>'
+  }
+
+  const image = '' +
+    `<image x="0" y="0" ` +
+    (defs ? `filter="url(#${id})" ` : ' ') +
+    `width="${width}" height="${height}" ` +
+    `xlink:href="data:${mimeType};base64,${base64}" />`
+
+  return defs + image
+}
+
+// async function createTracedSvg (buffer, type, width, height) {
+//   // TODO: traced svg fallback
+//   if (!/(jpe?g|png|bmp)/.test(type)) {
+//     return svgDataUri(
+//       `<svg fill="none" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg"/>`
+//     )
+//   }
+
+//   return new Promise((resolve, reject) => {
+//     potrace.trace(buffer, (err, svg) => {
+//       if (err) reject(err)
+//       else resolve(svgDataUri(svg))
+//     })
+//   })
+// }
 
 module.exports = ImageProcessQueue

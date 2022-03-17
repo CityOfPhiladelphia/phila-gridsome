@@ -13,9 +13,6 @@ class Codegen {
   constructor (app) {
     this.app = app
 
-    // Do not write files during unit tests.
-    if (process.env.GRIDSOME_TEST === 'unit') return
-
     this.files = {
       'icons.js': genIcons,
       'config.js': genConfig,
@@ -25,11 +22,6 @@ class Codegen {
       'plugins-client.js': () => genPlugins(app, false),
       'now.js': () => `export default ${app.store.lastUpdate}`
     }
-
-    const outputDir = app.config.appCacheDir
-
-    fs.ensureDirSync(outputDir)
-    fs.emptyDirSync(outputDir)
 
     app.hooks.bootstrap.tapPromise(
       {
@@ -42,7 +34,7 @@ class Codegen {
   }
 
   async generate (filename = null, ...args) {
-    const outputDir = this.app.config.appCacheDir
+    const outputDir = this.app.config.tmpDir
 
     const outputFile = async (filename, ...args) => {
       const filepath = path.join(outputDir, filename)

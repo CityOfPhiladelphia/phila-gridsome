@@ -3,10 +3,8 @@ const utils = require('loader-utils')
 module.exports = async function (source, map) {
   const callback = this.async()
 
-  this.cacheable(false)
-
-  const { assets } = utils.getOptions(this)
-  const options = utils.parseQuery(this.resourceQuery || '?')
+  const { assets } = process.GRIDSOME
+  const options = utils.parseQuery(this.query || '?')
 
   if (typeof options.imageWidths === 'string') {
     options.imageWidths = options.imageWidths.split(',').map(Number)
@@ -32,7 +30,6 @@ module.exports = async function (source, map) {
     callback(err, source, map)
     return
   }
-
   this.dependency(this.resourcePath)
 
   const res = {

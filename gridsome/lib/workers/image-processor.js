@@ -2,8 +2,13 @@ const path = require('path')
 const fs = require('fs-extra')
 const pMap = require('p-map')
 const sharp = require('sharp')
+const imagemin = require('imagemin')
 const colorString = require('color-string')
+const imageminWebp = require('imagemin-webp')
+const imageminMozjpeg = require('imagemin-mozjpeg')
+const imageminPngquant = require('imagemin-pngquant')
 const sysinfo = require('../utils/sysinfo')
+const { warmupSharp } = require('../utils/sharp')
 
 exports.processImage = async function ({
   width,
@@ -16,8 +21,6 @@ exports.processImage = async function ({
 }) {
   if (cachePath && await fs.exists(cachePath)) {
     return fs.copy(cachePath, destPath)
-  } else if (await fs.exists(destPath)) {
-    return
   }
 
   const { ext } = path.parse(filePath)
@@ -34,6 +37,7 @@ exports.processImage = async function ({
       jpegProgressive: true
     }
 
+    const plugins = []
     const sharpImage = sharp(buffer)
     const compress = imagesConfig.compress !== false && config.quality < 100
 
@@ -63,33 +67,50 @@ exports.processImage = async function ({
       if (/\.png$/.test(ext)) {
         sharpImage.png({
           compressionLevel: config.pngCompressionLevel,
-          quality: config.quality
+          adaptiveFiltering: false
         })
+        const quality = config.quality / 100
+        plugins.push(imageminPngquant({
+          quality: [quality, quality],
+          strip: true
+        }))
       }
 
       if (/\.jpe?g$/.test(ext)) {
         sharpImage.jpeg({
           progressive: config.jpegProgressive,
-          quality: config.quality,
-          mozjpeg: true
+          quality: config.quality
         })
+        plugins.push(imageminMozjpeg({
+          progressive: config.jpegProgressive,
+          quality: config.quality
+        }))
       }
 
       if (/\.webp$/.test(ext)) {
         sharpImage.webp({
           quality: config.quality
         })
+        plugins.push(imageminWebp({
+          quality: config.quality
+        }))
       }
     }
 
     const sharpBuffer = await sharpImage.toBuffer()
+    const resultBuffer = compress
+      ? await imagemin.buffer(sharpBuffer, { plugins })
+      : sharpBuffer
+    const resultLength = Buffer.byteLength(resultBuffer)
     const sharpLength = Buffer.byteLength(sharpBuffer)
     const initLength = Buffer.byteLength(buffer)
 
     return fs.outputFile(
       destPath,
-      sharpLength < initLength
-        ? sharpBuffer
+      resultLength < initLength
+        ? resultLength < sharpLength
+          ? resultBuffer
+          : sharpBuffer
         : buffer
     )
   }
@@ -103,6 +124,7 @@ exports.process = async function ({
   cacheDir,
   imagesConfig
 }) {
+  await warmupSharp(sharp)
   await pMap(queue, async set => {
     const cachePath = cacheDir ? path.join(cacheDir, set.filename) : null
 

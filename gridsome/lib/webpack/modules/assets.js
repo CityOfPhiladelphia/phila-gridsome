@@ -6,34 +6,35 @@ const {isMailtoLink, isTelLink} = require('../../utils')
 module.exports = () => ({
   postTransformNode(node) {
     if (['GLink', 'g-link'].includes(node.tag)) {
-      transformNodeAttr(node, 'to', 'g-link')
+      transformNodeAttr(node, 'to')
     }
 
     if (['GImage', 'g-image'].includes(node.tag)) {
-      transformNodeAttr(node, 'src', 'g-image')
+      transformNodeAttr(node, 'src')
     }
   }
 })
 
-function transformNodeAttr(node, attrName, type) {
+function transformNodeAttr(node, attrName) {
   if (!Array.isArray(node.attrs)) return
 
   for (const attr of node.attrs) {
     if (attr.name === attrName) {
       if (isStatic(attr.value)) {
-        attr.value = transformAttrValue(node, attr, type)
+        attr.value = transformAttrValue(node, attr)
         break
       }
     }
   }
 }
 
-function transformAttrValue(node, attr, type) {
+function transformAttrValue(node, attr) {
   const value = extractValue(attr.value)
   let result = attr.value
 
   if (!isUrl(value) && !isMailtoLink(value) && !isTelLink(value) && isRelative(value)) {
-    result = `require("${value}?${type}&${createOptionsQuery(node.attrs)}")`
+    const query = createOptionsQuery(node.attrs)
+    result = `require("!!assets-loader?${query}!${value}")`
   }
 
   return result
