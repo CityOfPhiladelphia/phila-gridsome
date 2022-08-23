@@ -1,7 +1,7 @@
 import Vue from 'vue'
 import Meta from 'vue-meta'
-import icons from '/tmp/.wow/icons.js' // derrick edit
-import config from '/tmp/.wow/config.js' // derrick edit
+import icons from '/tmp/.vote-temp/icons.js' // derrick edit
+import config from '/tmp/.vote-temp/config.js' // derrick edit
 
 Vue.use(Meta, {
   attribute: 'data-vue-tag',

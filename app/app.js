@@ -1,5 +1,5 @@
 import Vue from 'vue'
-import plugins from '/tmp/.wow/plugins-server' // derrick edit
+import plugins from '/tmp/.vote-temp/plugins-server' // derrick edit
 
 import * as main from '~/main'
 import App from '~/App.vue'

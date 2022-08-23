@@ -2,8 +2,8 @@ import './polyfills'
 
 import Vue from 'vue'
 import createApp, { runPlugins, runMain } from './app'
-import config from '/tmp/.wow/config' // derrick edit
-import plugins from '/tmp/.wow/plugins-client' // derrick edit
+import config from '/tmp/.vote-temp/config' // derrick edit
+import plugins from '/tmp/.vote-temp/plugins-client' // derrick edit
 import linkDirective from './directives/link'
 import imageDirective from './directives/image'
 import { stripPathPrefix } from './utils/helpers'
