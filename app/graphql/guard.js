@@ -1,5 +1,5 @@
 import fetch from '../fetch'
-import config from '/tmp/.wow/config' // derrick edit
+import config from '/tmp/.vote-temp/config' // derrick edit
 import { getResults, setResults, formatError } from './shared'
 
 export default (to, from, next) => {

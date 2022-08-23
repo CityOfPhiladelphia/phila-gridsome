@@ -1,4 +1,4 @@
-import config from '/tmp/.wow/config' // derrick edit
+import config from '/tmp/.vote-temp/config' // derrick edit
 
 const re = new RegExp(`^${config.pathPrefix}/?`)
 

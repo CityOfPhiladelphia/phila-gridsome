@@ -1,6 +1,6 @@
 import prefetch from './utils/prefetch'
 import { unslashEnd } from './utils/helpers'
-import { NOT_FOUND_PATH } from '/tmp/.wow/constants' // derrick edit
+import { NOT_FOUND_PATH } from '/tmp/.vote-temp/constants' // derrick edit
 
 const dataUrl = process.env.DATA_URL
 const isPrefetched = {}

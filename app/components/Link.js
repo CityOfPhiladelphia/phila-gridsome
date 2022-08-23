@@ -1,4 +1,4 @@
-import config from '/tmp/.wow/config.js' // derrick edit
+import config from '/tmp/.vote-temp/config.js' // derrick edit
 import { normalizePath, isMailtoLink, isTelLink } from '../utils/helpers'
 
 // @vue/component

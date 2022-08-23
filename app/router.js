@@ -1,6 +1,6 @@
 import Vue from 'vue'
 import Router from 'vue-router'
-import routes from '/tmp/.wow/routes.js' // derrick edit
+import routes from '/tmp/.vote-temp/routes.js' // derrick edit
 
 Vue.use(Router)
 
