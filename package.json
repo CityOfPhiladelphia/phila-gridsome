@@ -1,10 +1,10 @@
 {
   "version": "0.1.0",
-  "name": "phila-gridsome",
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com/"
+  "name": "@phila/phila-gridsome",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CityOfPhiladelphia/phila-gridsome.git"
   },
-  "repository": "git://github.com/CityOfPhiladelphia/phila-gridsome.git",
   "description": "A JAMstack framework for building blazing fast websites with Vue.js",
   "homepage": "https://gridsome.org",
   "bugs": "https://github.com/gridsome/gridsome/issues",
